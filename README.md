@@ -6,7 +6,7 @@ A Claude Code mod that keeps local `.env` files under control and keeps secrets 
 - **File actions**: add, edit, copy (to clipboard), delete keys; create and duplicate env files (a duplicate named `.example` gets empty values); add to `.gitignore` or untrack with one key
 - **Prompt interception**: a key pasted into a prompt is moved into the default env file before the model sees it; Claude gets `[env:.env#KEY]` and suggests key names that fit the context
 - **Write guard**: when Claude writes a key into a source file, the write is refused, the key moves into the env file and Claude is told to read it from the environment
-- **Hardcoded secret scan**: project files are scanned with gitleaks' 217 rules
+- **Hardcoded secret scan**: project files are scanned with gitleaks' 217 rules; `gitleaks:allow` (or `env-manager:allow`) on a line skips it, `env-manager:ignore-file` near the top skips the file
 - **gitleaks history scan** (optional): runs the `gitleaks` binary over the commit history, keeps each run's result per repository
 - **Leak warnings**: a line above the prompt and toasts when an env file is not gitignored, is tracked by git, or a key is hardcoded
 

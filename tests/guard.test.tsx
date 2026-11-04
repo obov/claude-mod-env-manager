@@ -75,6 +75,19 @@ test('/env scan lists keys hardcoded in source files, skipping env files and loc
   expect(r.text?.includes(GH)).toBe(false)
 })
 
+test('gitleaks:allow on a line and env-manager:ignore-file at the top skip findings', async ($, on) => {
+  const files: Record<string, string> = {
+    '/proj/src/a.ts': `const k = "${GH}" // gitleaks:allow\n`,
+    '/proj/src/b.ts': `// env-manager:ignore-file\nconst k = "${GH}"\n`,
+    '/proj/src/c.ts': `const k = "${GH}"\n`,
+  }
+  fake(on, files, { lsFiles: ['src/a.ts', 'src/b.ts', 'src/c.ts'] })
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
+  const r = await $.command.run({ command: 'env', args: 'scan' })
+  expect(r.text?.includes('하드코드 시크릿 1건')).toBe(true)
+  expect(r.text?.includes('src/c.ts:1')).toBe(true)
+})
+
 const PANE = {
   plugin: 'env-manager', component: 'Pane', requestId: 'env-manager',
   props: { title: 'env-manager', isFocused: true, bodyColumns: 80, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} },

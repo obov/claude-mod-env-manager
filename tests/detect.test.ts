@@ -25,7 +25,7 @@ test('gitleaks provider rules name the key after the provider', async () => {
   expect(keyOf('AKI' + 'AZ7Q3LMN4PRST6UVW')).toBe('AWS_ACCESS_TOKEN')
   expect(keyOf('xox' + 'b-1234567890123-1234567890123-aBcDeFgHiJkLmNoPqRsTuVwX')).toBe('SLACK_BOT_TOKEN')
   expect(keyOf('glp' + 'at-aB3dE5fG7hJ9kL1mN3pQ')).toBe('GITLAB_PAT')
-  expect(keyOf('my token: Xk29dLq0pZ81')).toBe('API_KEY')
+  expect(keyOf('my token: Xk29dLq0pZ81')).toBe('API_KEY') // gitleaks:allow (test fixture)
   expect(keyOf('const apiKey = process.env.API_KEY')).toBe('')
   expect(keyOf('password = "changeme"')).toBe('')
   expect(keyOf('AKI' + 'AIOSFODNN7EXAMPLE')).toBe('')

@@ -916,7 +916,13 @@ async function findingsIn($: $, root: string, path: string): Promise<CodeFinding
   if (matchesAny(baseOf(path), cfg.patterns) || !isScannableCode(path)) return []
   const text = await $.fs.read(`${root}/${path}`).catch(() => '')
   if (text === '' || text.length > MAX_CODE_BYTES || text.includes('\0')) return []
-  return findSecretsInCode(text).map(f => ({ path, line: lineOf(text, f.start), rule: f.key, masked: mask(f.value) }))
+  // `env-manager:ignore-file` near the top skips the file; `gitleaks:allow` or
+  // `env-manager:allow` on a line skips that line, as gitleaks does
+  if (/env-manager:ignore-file/.test(text.slice(0, 2000))) return []
+  const lineText = (at: number) => text.slice(text.lastIndexOf('\n', at - 1) + 1, (text.indexOf('\n', at) + 1 || text.length + 1) - 1)
+  return findSecretsInCode(text)
+    .filter(f => !/gitleaks:allow|env-manager:allow/.test(lineText(f.start)))
+    .map(f => ({ path, line: lineOf(text, f.start), rule: f.key, masked: mask(f.value) }))
 }
 
 async function doScanCode($: $, scan: EnvScan): Promise<CodeScan> {

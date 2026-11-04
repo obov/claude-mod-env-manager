@@ -1,3 +1,4 @@
+// env-manager:ignore-file (regex sources, not secrets)
 // Generated from gitleaks' default config (config/gitleaks.toml at
 // gitleaks/gitleaks@5f6ec56cfa6f), its Go regexes rewritten for JavaScript:
 // case-insensitive parts expanded to [aA] classes, (?s) dots as [\s\S].
