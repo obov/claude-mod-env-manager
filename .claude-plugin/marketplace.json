@@ -1,0 +1,13 @@
+{
+  "name": "claude-mod-env-manager",
+  "owner": {
+    "name": "obov"
+  },
+  "plugins": [
+    {
+      "name": "env-manager",
+      "source": "./",
+      "description": "Tracks local .env files: masked tree pane, gitignore checks, add/copy/edit values, and secrets typed into prompts moved into an env file"
+    }
+  ]
+}

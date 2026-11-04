@@ -1,0 +1,93 @@
+{
+  "name": "env-manager",
+  "version": "0.1.0",
+  "description": "Tracks local .env files: masked tree pane, gitignore checks, add/copy/edit values, and secrets typed into prompts moved into an env file",
+  "author": {
+    "name": "obov"
+  },
+  "repository": "https://github.com/obov/claude-mod-env-manager",
+  "license": "MIT",
+  "keywords": [
+    "env",
+    "dotenv",
+    "secrets",
+    "gitignore",
+    "gitleaks",
+    "mod",
+    "pane"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "patterns": {
+      "type": "string",
+      "title": "Env file patterns",
+      "description": "Glob patterns of file names to track, separated by spaces or commas. * matches any characters except /.",
+      "default": ".env .env.*"
+    },
+    "defaultFile": {
+      "type": "string",
+      "title": "Default env file",
+      "description": "Where a secret typed into a prompt is stored, relative to the working directory.",
+      "default": ".env"
+    },
+    "intercept": {
+      "type": "string",
+      "title": "Intercept secrets in prompts",
+      "description": "on: secrets found in a prompt are moved into the default env file before the model sees them.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "guardWrites": {
+      "type": "string",
+      "title": "Guard Claude's writes",
+      "description": "on: when Claude writes a key into a source file with Write or Edit, the write is refused, the key moves into the default env file and Claude is told to read it from the environment.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "scanFiles": {
+      "type": "string",
+      "title": "Scan source files",
+      "description": "on: the project's files (git-tracked and untracked, not ignored) are scanned for hardcoded keys with gitleaks' rules; findings show in the /env pane.",
+      "default": "on",
+      "options": [
+        "on",
+        "off"
+      ]
+    },
+    "gitleaks": {
+      "type": "string",
+      "title": "gitleaks history scan",
+      "description": "Scan the commit history with the gitleaks binary when it is installed. manual: only from the /env settings page. auto: at session start when HEAD moved since the last run. Each run's result is kept per repository.",
+      "default": "manual",
+      "options": [
+        "off",
+        "manual",
+        "auto"
+      ]
+    },
+    "maxDepth": {
+      "type": "string",
+      "title": "Scan depth",
+      "description": "How many folder levels below the working directory are scanned.",
+      "default": "5"
+    },
+    "checkMinutes": {
+      "type": "string",
+      "title": "Leak check interval (minutes)",
+      "description": "Minimum minutes between background leak checks at the end of a turn.",
+      "default": "10"
+    },
+    "renamePrompt": {
+      "type": "string",
+      "title": "Key name prompt",
+      "description": "What Claude is told to do after a secret from a prompt is stored: how to report it and how to ask for a key name. Placeholders: {file} the env file, {path} its full path, {stored} the stored key names, {keys} the names already in the file, {tool} the rename tool. Empty: the default. The safety rules (never ask for or print the value) are always added and cannot be edited here.",
+      "default": "In your reply, in the user's language: 1) tell them which file path and key name each value was stored under, showing only the masked value. 2) Suggest 3-5 key names that fit the context as a numbered list, best first: consider what the user is doing in this prompt and conversation, the provider the value looks like, the names already in {file} ({keys}), and env variable names the project's code reads (process.env.X, os.environ, getenv). Make the current name {stored} the last option. 3) Ask which one to use. When they pick a number or type a name, call {tool} with { file: \"{file}\", from: <current key>, to: <new key> }; if they keep the current name, do nothing."
+    }
+  }
+}
