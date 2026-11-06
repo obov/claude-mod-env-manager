@@ -25,8 +25,6 @@ export type EnvScan = {
 }
 
 export type EnvMode =
-  | { kind: 'new'; dir: string }
-  | { kind: 'add'; file: string }
   | { kind: 'edit'; file: string; key: string }
   | { kind: 'dup'; file: string }
   | { kind: 'setting'; field: string }
@@ -47,6 +45,21 @@ export type EnvUi = {
   mode: EnvMode | null
   message: string
 }
+
+/** The dialog pane: create an env file, or add a key, with each field typed apart. */
+export type EnvDialog =
+  | {
+      kind: 'new'
+      /** the folder selected in the tree ('' = root) */
+      dir: string
+      /** create at the root whatever folder is selected */
+      atRoot: boolean
+      name: string
+      key: string
+      value: string
+      error: string
+    }
+  | { kind: 'add'; file: string; key: string; value: string; error: string }
 
 /** One row of the tree, as the rows client draws it. */
 export type EnvSeg = { t: string; c?: string; b?: boolean; dim?: boolean }
@@ -91,6 +104,7 @@ declare module 'claude-code' {
       hiddenWarning: string
       code: Shaped<CodeScan>
       gitleaks: Shaped<GitleaksState>
+      dialog: Shaped<EnvDialog | null>
     }
   }
 }

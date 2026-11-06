@@ -74,29 +74,61 @@ test('the tree shows folders and env files one per row, values masked when opene
   await ui.unmount()
 })
 
-test('n opens the new-file input in the selected folder; ✖ closes it', async ($, on) => {
+const DIALOG = { ...PANE, requestId: 'env-manager-dialog', props: { ...PANE.props, title: '새 env 파일' } } as const
+
+test('n opens the dialog showing the full path; root option ignores the selected folder', async ($, on) => {
   const files: Record<string, string> = {}
   const tree: Record<string, Entry[]> = { '/proj': [{ name: 'api', kind: 'dir' }], '/proj/api': [] }
   fakeProject(on, files, tree, null)
+  const opened: string[] = []
+  on('ui.open', (_: unknown, e: { id: string }) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', () => ({ value: undefined }))
   await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.key({ key: 'down', in: 'rows' }) // api/
+  await ui.key({ key: 'n', in: 'rows' })
+  expect(opened.includes('env-manager-dialog')).toBe(true)
+
+  const dlg = await $.ui.mount({ ...DIALOG, surface: 'terminal' })
+  expect(JSON.stringify(await dlg.drawn()).includes('/proj/api/.env')).toBe(true)
+  await dlg.press({ key: 'dlg-root' })
+  expect(JSON.stringify(await dlg.drawn()).includes('/proj/api/.env')).toBe(false)
+  await dlg.input({ key: 'dlg-key', text: 'TOKEN', kind: 'change' })
+  await dlg.input({ key: 'dlg-value', text: 'abc123', kind: 'change' })
+  await dlg.input({ key: 'dlg-name', text: '.env.local' })
+  expect(files['/proj/.env.local']).toBe('TOKEN=abc123\n')
+  expect(files['/proj/api/.env.local']).toBeUndefined()
+  await dlg.unmount()
+  await ui.unmount()
+})
+
+test('n on a folder without the root option creates there', async ($, on) => {
+  const files: Record<string, string> = {}
+  const tree: Record<string, Entry[]> = { '/proj': [{ name: 'api', kind: 'dir' }], '/proj/api': [] }
+  fakeProject(on, files, tree, null)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
+  await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.key({ key: 'down', in: 'rows' })
   await ui.key({ key: 'n', in: 'rows' })
-  expect(await ui.find({ key: 'mode-input:new:api' })).toBeDefined()
-  await ui.press({ key: 'cancel-input' })
-  expect(await ui.find({ key: 'mode-input:new:api' })).toBeUndefined()
-
-  await ui.key({ key: 'n', in: 'rows' })
-  await ui.input({ key: 'mode-input:new:api', text: '' })
+  const dlg = await $.ui.mount({ ...DIALOG, surface: 'terminal' })
+  await dlg.press({ key: 'dlg-ok' })
   expect(files['/proj/api/.env']).toBe('')
   expect(JSON.stringify(await ui.drawn({ in: 'rows' })).includes('(비어 있음')).toBe(true)
+  await dlg.unmount()
   await ui.unmount()
 })
 
 test('a, c and e act on the selected key', async ($, on) => {
   const files: Record<string, string> = { '/proj/.env': 'A=hello12345\n' }
   fakeProject(on, files, { '/proj': [{ name: '.env', kind: 'file' }] }, null)
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.close', () => ({ value: undefined }))
   let copied = ''
   on('ui.copy', (_: unknown, e: { text: string }) => {
     copied = e.text
@@ -107,8 +139,12 @@ test('a, c and e act on the selected key', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.key({ key: 'down', in: 'rows' }) // .env
   await ui.key({ key: 'a', in: 'rows' })
-  await ui.input({ key: 'mode-input:add:.env', text: 'B=world67890' })
+  const dlg = await $.ui.mount({ ...DIALOG, surface: 'terminal' })
+  expect(JSON.stringify(await dlg.drawn()).includes('/proj/.env')).toBe(true)
+  await dlg.input({ key: 'dlg-value', text: 'world67890', kind: 'change' })
+  await dlg.input({ key: 'dlg-key', text: 'B' })
   expect(files['/proj/.env']).toBe('A=hello12345\nB=world67890\n')
+  await dlg.unmount()
 
   await ui.key({ key: 'c', in: 'rows' }) // cursor moved to the new key B
   expect(copied).toBe('world67890')
@@ -124,8 +160,8 @@ test('keys typed in Korean IME mode act like their Latin keys', async ($, on) =>
   await $.session.start({ cwd: '/proj', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await ui.key({ key: 'ㅓ', in: 'rows' }) // j: down to .env
-  await ui.key({ key: 'ㅁ', in: 'rows' }) // a: add key
-  expect(await ui.find({ key: 'mode-input:add:.env' })).toBeDefined()
+  await ui.key({ key: 'ㅇ', in: 'rows' }) // d: duplicate
+  expect(await ui.find({ key: 'mode-input:dup:.env' })).toBeDefined()
   await ui.press({ key: 'cancel-input' })
   await ui.key({ key: 'ㄴ', in: 'rows' }) // s: settings
   expect(JSON.stringify(await ui.drawn({ in: 'rows' })).includes('프롬프트 비밀값 가로채기')).toBe(true)

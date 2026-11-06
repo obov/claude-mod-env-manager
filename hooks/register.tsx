@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type {
-  CodeFinding, CodeScan, EnvFile, EnvMode, EnvRow, EnvRowsProps, EnvScan, EnvUi, GitleaksRecord, GitleaksState, HistoryFinding,
+  CodeFinding, CodeScan, EnvDialog, EnvFile, EnvMode, EnvRow, EnvRowsProps, EnvScan, EnvUi, GitleaksRecord, GitleaksState, HistoryFinding,
 } from '../types'
 import {
   SKIP_DIRS, baseOf, dirOf, findSecrets, findSecretsInCode, isScannableCode, isTemplateName, isValidKey, lineOf, mask,
@@ -12,6 +12,7 @@ import type { Found } from './env'
 
 const PLUGIN = 'env-manager'
 const PANE = 'env-manager'
+const DIALOG = 'env-manager-dialog'
 const RENAME_TOOL = `mcp__${PLUGIN}__rename_key`
 
 const scanAtom = atom({ plugin: 'env-manager', key: 'scan' } as const, null, { shape: 'scan-2' })
@@ -24,9 +25,10 @@ const uiAtom = atom({ plugin: 'env-manager', key: 'ui' } as const, {
   setCursor: 'set:intercept',
   mode: null,
   message: '',
-} as EnvUi, { shape: 'ui-5' })
+} as EnvUi, { shape: 'ui-6' })
 const codeAtom = atom({ plugin: 'env-manager', key: 'code' } as const, { status: 'idle', files: 0, findings: [], at: 0 } as CodeScan, { shape: 'code-1' })
 const gitleaksAtom = atom({ plugin: 'env-manager', key: 'gitleaks' } as const, { version: null, running: false, record: null } as GitleaksState, { shape: 'gl-1' })
+const dialogAtom = atom({ plugin: 'env-manager', key: 'dialog' } as const, null as EnvDialog | null, { shape: 'dialog-1' })
 const hiddenAtom = atom({ plugin: 'env-manager', key: 'hiddenWarning' } as const, '')
 
 type $ = EngineInterface
@@ -442,6 +444,99 @@ export const register: Register = (on, options) => {
     return {}
   })
 
+  on('ui.close', async ($, e, next) => {
+    if (e.id === DIALOG) await update($, dialogAtom, () => null)
+    return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: DIALOG }, async ($, e) => {
+    const { Box, Button, Text, Input } = $.ui.resolve(e)
+    const d = await read($, dialogAtom)
+    const scan = await read($, scanAtom)
+    if (!d || !scan) {
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>열린 작업 없음</Text>
+          <Button key="dlg-close" label="닫기" onPress={() => void closeDialog($, '')} />
+        </Box>
+      )
+    }
+    const patch = (p: Partial<EnvDialog>) => update($, dialogAtom, x => (x ? ({ ...x, ...p, error: '' } as EnvDialog) : x))
+    const submit = () => void submitDialog($, scan)
+    const field = (k: 'name' | 'key' | 'value', label: string, placeholder: string, value: string, isFirst?: boolean) => (
+      <Input
+        key={`dlg-${k}`}
+        label={label}
+        placeholder={placeholder}
+        value={value}
+        submitLabel="확인"
+        {...(isFirst ? { autoFocus: true as const } : {})}
+        onInput={v => void patch({ [k]: v })}
+        onSubmit={v => void patch({ [k]: v }).then(submit)}
+      />
+    )
+    const rel = d.kind === 'new' ? newTarget(d) : d.file
+    const path = abs(scan.root, rel)
+    const ignoreNote = isTemplateName(baseOf(rel)) ? '템플릿: gitignore 등록 안 함' : 'gitignore 자동 등록'
+    const actions = (
+      <Box key="dlg-actions" flexDirection="row" gap={2}>
+        <Button key="dlg-ok" label={d.kind === 'new' ? '생성' : '저장'} onPress={submit} />
+        <Button key="dlg-cancel" label="취소" dimColor onPress={() => void closeDialog($, '')} />
+      </Box>
+    )
+    const error = <Text key="dlg-error" color="error">{d.error || ' '}</Text>
+
+    if (d.kind === 'add') {
+      return (
+        <Box flexDirection="column">
+          <Text bold>키 추가</Text>
+          <Box flexDirection="row" gap={1}>
+            <Text dimColor>대상 파일</Text>
+            <Text color="suggestion">{path}</Text>
+          </Box>
+          {field('key', 'KEY ', 'API_KEY  (KEY=값 붙여넣기 가능)', d.key, true)}
+          {field('value', '값  ', '비워 두면 빈 값', d.value)}
+          {error}
+          {actions}
+        </Box>
+      )
+    }
+
+    const hasDir = d.dir !== ''
+    const where = (atRoot: boolean, label: string) => (
+      <Button
+        key={atRoot ? 'dlg-root' : 'dlg-dir'}
+        plain
+        dimColor={d.atRoot !== atRoot}
+        label={`${d.atRoot === atRoot ? '◉' : '○'} ${label}`}
+        onPress={() => void patch({ atRoot })}
+      />
+    )
+    return (
+      <Box flexDirection="column">
+        <Text bold>새 env 파일</Text>
+        {hasDir ? (
+          <Box key="dlg-where" flexDirection="row" gap={2}>
+            <Text dimColor>위치</Text>
+            {where(false, `선택 폴더 ${d.dir}/`)}
+            {where(true, '루트')}
+          </Box>
+        ) : null}
+        {field('name', '파일 이름 ', '.env', d.name, true)}
+        <Box flexDirection="row" gap={1}>
+          <Text dimColor>생성 경로</Text>
+          <Text color="suggestion" bold>{path}</Text>
+        </Box>
+        <Text dimColor>{ignoreNote}{matchesAny(baseOf(rel), cfg.patterns) ? '' : ' · 추적 패턴 미일치로 트리에 안 보임'}</Text>
+        <Text dimColor>첫 키 (선택)</Text>
+        {field('key', 'KEY ', 'API_KEY  (KEY=값 붙여넣기 가능)', d.key)}
+        {field('value', '값  ', '비워 두면 빈 값', d.value)}
+        {error}
+        {actions}
+      </Box>
+    )
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)
     const { Box, Button, Text, Input } = elements
@@ -671,21 +766,17 @@ function hintsFor(cursor: string, scan: EnvScan): Hint[] {
 
 function modeId(mode: EnvMode): string {
   if (mode.kind === 'setting') return `setting:${mode.field}`
-  return mode.kind === 'new' ? `new:${mode.dir}` : mode.kind === 'edit' ? `edit:${mode.file}:${mode.key}` : `${mode.kind}:${mode.file}`
+  return mode.kind === 'edit' ? `edit:${mode.file}:${mode.key}` : `${mode.kind}:${mode.file}`
 }
 
 function modeLabel(mode: EnvMode): string {
   if (mode.kind === 'setting') return SETTINGS.find(f => f.field === mode.field)?.label ?? mode.field
-  if (mode.kind === 'new') return `새 env 파일 · ${mode.dir === '' ? '.' : mode.dir}/`
-  if (mode.kind === 'add') return `키 추가 · ${mode.file}`
   if (mode.kind === 'edit') return `${mode.key} 새 값`
   return `복제 · ${mode.file} →`
 }
 
 function modePlaceholder(mode: EnvMode): string {
   if (mode.kind === 'setting') return SETTINGS.find(f => f.field === mode.field)?.fallback ?? ''
-  if (mode.kind === 'new') return '.env'
-  if (mode.kind === 'add') return 'KEY=값'
   if (mode.kind === 'edit') return '새 값'
   return '.env.local'
 }
@@ -712,7 +803,7 @@ async function act($: $, scan: EnvScan, ui: EnvUi, cursor: string, key: string, 
     await say($, '재검사 완료')
     return
   }
-  if (key === 'n') return void (await setMode({ kind: 'new', dir: dirOfTarget }))
+  if (key === 'n') return void (await openDialog($, { kind: 'new', dir: dirOfTarget, atRoot: false, name: '', key: '', value: '', error: '' }))
 
   if (cursor === 'code' || cursor === 'hist') {
     if (key === 'return' || key === '⏎' || key === ' ' || key === 'right' || key === 'left' || key === 'l' || key === 'h') {
@@ -767,7 +858,7 @@ async function act($: $, scan: EnvScan, ui: EnvUi, cursor: string, key: string, 
   if (t.kind === 'root' || t.kind === 'dir') return
   const file = t.file
 
-  if (key === 'a') return void (await setMode({ kind: 'add', file: file.path }))
+  if (key === 'a') return void (await openDialog($, { kind: 'add', file: file.path, key: '', value: '', error: '' }))
   if (key === 'd') return void (await setMode({ kind: 'dup', file: file.path }))
   if (key === 'i' && !file.isTemplate && file.isIgnored === false) {
     const note = await ensureIgnored($, root, file.path)
@@ -803,6 +894,60 @@ async function act($: $, scan: EnvScan, ui: EnvUi, cursor: string, key: string, 
   }
 }
 
+const newTarget = (d: Extract<EnvDialog, { kind: 'new' }>) => {
+  const name = d.name.trim().replace(/^\.\//, '') || '.env'
+  return d.atRoot || d.dir === '' || name.includes('/') ? name.replace(/^\//, '') : `${d.dir}/${name}`
+}
+
+async function openDialog($: $, d: EnvDialog): Promise<void> {
+  await update($, dialogAtom, () => d)
+  await update($, uiAtom, u => ({ ...u, mode: null, message: '' }))
+  await $.ui.open({ id: DIALOG, title: d.kind === 'new' ? '새 env 파일' : '키 추가', focus: true, closeOnEscape: true, holdToasts: true, rows: d.kind === 'new' ? 12 : 7 })
+}
+
+async function closeDialog($: $, message: string): Promise<void> {
+  await update($, dialogAtom, () => null)
+  await $.ui.close({ id: DIALOG })
+  await closeMode($, message)
+}
+
+/** Splits `KEY=value` typed into the key field; a value field typed apart wins. */
+function keyValue(d: { key: string; value: string }): { key: string; value: string } {
+  const at = d.key.indexOf('=')
+  if (at < 0) return { key: d.key.trim(), value: d.value }
+  return { key: d.key.slice(0, at).trim(), value: d.value !== '' ? d.value : d.key.slice(at + 1).trim() }
+}
+
+async function submitDialog($: $, scan: EnvScan): Promise<void> {
+  const d = await read($, dialogAtom)
+  if (!d) return
+  const { root } = scan
+  const fail = (error: string) => update($, dialogAtom, x => (x ? { ...x, error } : x))
+  const kv = keyValue(d)
+  if (kv.key !== '' && !isValidKey(kv.key)) return void (await fail(`잘못된 키 이름: ${kv.key}`))
+
+  if (d.kind === 'add') {
+    if (kv.key === '') return void (await fail('KEY 입력 필요'))
+    await setValue($, root, d.file, kv.key, kv.value)
+    await rescan($)
+    await update($, uiAtom, u => ({ ...u, open: u.open.includes(d.file) ? u.open : [...u.open, d.file], cursor: `k:${d.file}\u0000${kv.key}` }))
+    return closeDialog($, `${d.file}: ${kv.key} 저장`)
+  }
+
+  const rel = newTarget(d)
+  if (await $.fs.exists(abs(root, rel))) return void (await fail(`${rel} 이미 존재`))
+  await $.fs.write(abs(root, rel), kv.key === '' ? '' : setKey('', kv.key, kv.value))
+  const note = isTemplateName(baseOf(rel)) ? '템플릿 파일' : await ensureIgnored($, root, rel)
+  const unmatched = matchesAny(baseOf(rel), cfg.patterns) ? '' : ' · 패턴 미일치로 트리에 안 보임'
+  await rescan($)
+  const dir = dirOf(rel)
+  await update($, uiAtom, u => ({
+    ...u, open: [...u.open, rel], cursor: `f:${rel}`,
+    dirOpen: dir === '' || u.dirOpen.includes(dir) ? u.dirOpen : [...u.dirOpen, dir],
+  }))
+  return closeDialog($, `${rel} 생성 · ${note}${unmatched}${kv.key ? ` · ${kv.key} 저장` : ''}`)
+}
+
 async function submitMode($: $, scan: EnvScan, mode: EnvMode | null, raw: string): Promise<void> {
   if (!mode) return
   const { root } = scan
@@ -811,31 +956,6 @@ async function submitMode($: $, scan: EnvScan, mode: EnvMode | null, raw: string
   if (mode.kind === 'setting') {
     const note = await setOption($, mode.field, value)
     return closeMode($, note)
-  }
-
-  if (mode.kind === 'new') {
-    const name = value.replace(/^\.\//, '') || '.env'
-    const rel = mode.dir === '' ? name : `${mode.dir}/${name}`
-    if (await $.fs.exists(abs(root, rel))) return void (await hint($, `${rel} 이미 존재`))
-    await $.fs.write(abs(root, rel), '')
-    const note = isTemplateName(baseOf(rel)) ? '템플릿 파일' : await ensureIgnored($, root, rel)
-    const unmatched = matchesAny(baseOf(rel), cfg.patterns) ? '' : ' · 패턴 미일치로 트리에 안 보임'
-    await rescan($)
-    await update($, uiAtom, u => ({
-      ...u, open: [...u.open, rel], cursor: `f:${rel}`,
-      dirOpen: mode.dir === '' || u.dirOpen.includes(mode.dir) ? u.dirOpen : [...u.dirOpen, mode.dir],
-    }))
-    return closeMode($, `${rel} 생성 · ${note}${unmatched}`)
-  }
-
-  if (mode.kind === 'add') {
-    const at = value.indexOf('=')
-    const key = (at < 0 ? value : value.slice(0, at)).trim()
-    if (!isValidKey(key)) return void (await hint($, `잘못된 키 이름: ${key || '(비어 있음)'}`))
-    await setValue($, root, mode.file, key, at < 0 ? '' : value.slice(at + 1).trim())
-    await rescan($)
-    await update($, uiAtom, u => ({ ...u, open: u.open.includes(mode.file) ? u.open : [...u.open, mode.file], cursor: `k:${mode.file}\u0000${key}` }))
-    return closeMode($, `${mode.file}: ${key} 저장`)
   }
 
   if (mode.kind === 'edit') {
