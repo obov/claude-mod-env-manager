@@ -12,7 +12,6 @@ import type { Found } from './env'
 
 const PLUGIN = 'env-manager'
 const PANE = 'env-manager'
-const DIALOG = 'env-manager-dialog'
 const RENAME_TOOL = `mcp__${PLUGIN}__rename_key`
 
 const scanAtom = atom({ plugin: 'env-manager', key: 'scan' } as const, null, { shape: 'scan-2' })
@@ -424,11 +423,16 @@ export const register: Register = (on, options) => {
     const run = (id: string, key: string) => (isSettings ? actSetting($, scan, id, key) : act($, scan, ui, id, key, e.surface))
 
     if (typeof data.press === 'string') {
+      if (await read($, dialogAtom)) return {}
       if (data.press === cursor) await run(cursor, 'return')
       else await setCursor(String(data.press))
       return {}
     }
     if (typeof data.key !== 'string') return {}
+    if (await read($, dialogAtom)) {
+      if (data.key === 'escape') await closeDialog($, '')
+      return {}
+    }
     const key = HANGUL_KEYS[data.key] ?? data.key
     if (key === 's') {
       await update($, uiAtom, (u): EnvUi => ({ ...u, view: u.view === 'settings' ? 'tree' : 'settings', mode: null, message: '' }))
@@ -442,99 +446,6 @@ export const register: Register = (on, options) => {
     else if (key === 'end' || key === 'G') await move(ids.length - 1)
     else await run(cursor, key)
     return {}
-  })
-
-  on('ui.close', async ($, e, next) => {
-    if (e.id === DIALOG) await update($, dialogAtom, () => null)
-    return next(e)
-  })
-
-  on('ui.render', { component: 'Pane', requestId: DIALOG }, async ($, e) => {
-    const { Box, Button, Text, Input } = $.ui.resolve(e)
-    const d = await read($, dialogAtom)
-    const scan = await read($, scanAtom)
-    if (!d || !scan) {
-      return (
-        <Box flexDirection="column">
-          <Text dimColor>열린 작업 없음</Text>
-          <Button key="dlg-close" label="닫기" onPress={() => void closeDialog($, '')} />
-        </Box>
-      )
-    }
-    const patch = (p: Partial<EnvDialog>) => update($, dialogAtom, x => (x ? ({ ...x, ...p, error: '' } as EnvDialog) : x))
-    const submit = () => void submitDialog($, scan)
-    const field = (k: 'name' | 'key' | 'value', label: string, placeholder: string, value: string, isFirst?: boolean) => (
-      <Input
-        key={`dlg-${k}`}
-        label={label}
-        placeholder={placeholder}
-        value={value}
-        submitLabel="확인"
-        {...(isFirst ? { autoFocus: true as const } : {})}
-        onInput={v => void patch({ [k]: v })}
-        onSubmit={v => void patch({ [k]: v }).then(submit)}
-      />
-    )
-    const rel = d.kind === 'new' ? newTarget(d) : d.file
-    const path = abs(scan.root, rel)
-    const ignoreNote = isTemplateName(baseOf(rel)) ? '템플릿: gitignore 등록 안 함' : 'gitignore 자동 등록'
-    const actions = (
-      <Box key="dlg-actions" flexDirection="row" gap={2}>
-        <Button key="dlg-ok" label={d.kind === 'new' ? '생성' : '저장'} onPress={submit} />
-        <Button key="dlg-cancel" label="취소" dimColor onPress={() => void closeDialog($, '')} />
-      </Box>
-    )
-    const error = <Text key="dlg-error" color="error">{d.error || ' '}</Text>
-
-    if (d.kind === 'add') {
-      return (
-        <Box flexDirection="column">
-          <Text bold>키 추가</Text>
-          <Box flexDirection="row" gap={1}>
-            <Text dimColor>대상 파일</Text>
-            <Text color="suggestion">{path}</Text>
-          </Box>
-          {field('key', 'KEY ', 'API_KEY  (KEY=값 붙여넣기 가능)', d.key, true)}
-          {field('value', '값  ', '비워 두면 빈 값', d.value)}
-          {error}
-          {actions}
-        </Box>
-      )
-    }
-
-    const hasDir = d.dir !== ''
-    const where = (atRoot: boolean, label: string) => (
-      <Button
-        key={atRoot ? 'dlg-root' : 'dlg-dir'}
-        plain
-        dimColor={d.atRoot !== atRoot}
-        label={`${d.atRoot === atRoot ? '◉' : '○'} ${label}`}
-        onPress={() => void patch({ atRoot })}
-      />
-    )
-    return (
-      <Box flexDirection="column">
-        <Text bold>새 env 파일</Text>
-        {hasDir ? (
-          <Box key="dlg-where" flexDirection="row" gap={2}>
-            <Text dimColor>위치</Text>
-            {where(false, `선택 폴더 ${d.dir}/`)}
-            {where(true, '루트')}
-          </Box>
-        ) : null}
-        {field('name', '파일 이름 ', '.env', d.name, true)}
-        <Box flexDirection="row" gap={1}>
-          <Text dimColor>생성 경로</Text>
-          <Text color="suggestion" bold>{path}</Text>
-        </Box>
-        <Text dimColor>{ignoreNote}{matchesAny(baseOf(rel), cfg.patterns) ? '' : ' · 추적 패턴 미일치로 트리에 안 보임'}</Text>
-        <Text dimColor>첫 키 (선택)</Text>
-        {field('key', 'KEY ', 'API_KEY  (KEY=값 붙여넣기 가능)', d.key)}
-        {field('value', '값  ', '비워 두면 빈 값', d.value)}
-        {error}
-        {actions}
-      </Box>
-    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -585,6 +496,66 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
+    const dialog = await read($, dialogAtom)
+    const card = dialog ? dialogCard(dialog) : null
+    function dialogCard(d: EnvDialog) {
+      const patch = (p: Partial<EnvDialog>) => update($, dialogAtom, x => (x ? ({ ...x, ...p, error: '' } as EnvDialog) : x))
+      const submit = () => void submitDialog($, scan!)
+      const field = (k: 'name' | 'key' | 'value', label: string, placeholder: string, value: string) => (
+        <Input
+          key={`dlg-${k}`}
+          label={label}
+          placeholder={placeholder}
+          value={value}
+          submitLabel="확인"
+          onInput={v => void patch({ [k]: v })}
+          onSubmit={v => void patch({ [k]: v }).then(submit)}
+        />
+      )
+      const rel = d.kind === 'new' ? newTarget(d) : d.file
+      const path = abs(scan!.root, rel)
+      const where = (atRoot: boolean, label: string) => (
+        <Button
+          key={atRoot ? 'dlg-root' : 'dlg-dir'}
+          plain
+          dimColor={d.kind === 'new' && d.atRoot !== atRoot}
+          label={`${d.kind === 'new' && d.atRoot === atRoot ? '◉' : '○'} ${label}`}
+          onPress={() => void patch({ atRoot })}
+        />
+      )
+      const isNew = d.kind === 'new'
+      return (
+        <Box key="dlg-card" position="absolute" top={0} left={2} right={2} flexDirection="column" borderStyle="round" borderColor="suggestion" backgroundColor="ansi256(235)" paddingX={1}>
+          <Text bold color="suggestion">{isNew ? '새 env 파일' : '키 추가'}</Text>
+          {d.kind === 'new' && d.dir !== '' ? (
+            <Box key="dlg-where" flexDirection="row" gap={2}>
+              <Text dimColor>위치</Text>
+              {where(false, `선택 폴더 ${d.dir}/`)}
+              {where(true, '루트')}
+            </Box>
+          ) : null}
+          {d.kind === 'new' ? field('name', '파일 이름 ', '.env', d.name) : null}
+          <Box flexDirection="row" gap={1}>
+            <Text dimColor>{isNew ? '생성 경로' : '대상 파일'}</Text>
+            <Text bold>{path}</Text>
+          </Box>
+          {isNew ? (
+            <Text dimColor>
+              {isTemplateName(baseOf(rel)) ? '템플릿: gitignore 등록 안 함' : 'gitignore 자동 등록'}
+              {matchesAny(baseOf(rel), cfg.patterns) ? '' : ' · 추적 패턴 미일치로 트리에 안 보임'}
+            </Text>
+          ) : null}
+          {field('key', isNew ? 'KEY(선택) ' : 'KEY ', 'API_KEY  (KEY=값 붙여넣기 가능)', d.key)}
+          {field('value', '값 ', '비워 두면 빈 값', d.value)}
+          {d.error ? <Text color="error">{d.error}</Text> : null}
+          <Box key="dlg-actions" flexDirection="row" gap={2}>
+            <Button key="dlg-ok" label={isNew ? '생성' : '저장'} onPress={submit} />
+            <Button key="dlg-cancel" label="취소" dimColor onPress={() => void closeDialog($, '')} />
+          </Box>
+        </Box>
+      )
+    }
+
     const footer = ui.mode ? (
       <Box key="footer" flexDirection="row" gap={1}>
         <Input
@@ -615,6 +586,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         {header}
+        <Box key="body" flexDirection="column" minHeight={card ? (dialog?.kind === 'new' ? 12 : 8) : 0}>
         {Client ? (
           <Client key="rows" module="./rows.tsx" props={props} />
         ) : (
@@ -624,9 +596,11 @@ export const register: Register = (on, options) => {
             ))}
           </Box>
         )}
+        {card}
+        </Box>
         {!isSettings && scan.files.length === 0 && <Text dimColor>env 파일 없음 · n 으로 생성</Text>}
         <Text dimColor>{ui.message || ' '}</Text>
-        {footer}
+        {card ? <Text dimColor>Tab 칸 이동 · Enter 확인</Text> : footer}
       </Box>
     )
   })
@@ -902,12 +876,11 @@ const newTarget = (d: Extract<EnvDialog, { kind: 'new' }>) => {
 async function openDialog($: $, d: EnvDialog): Promise<void> {
   await update($, dialogAtom, () => d)
   await update($, uiAtom, u => ({ ...u, mode: null, message: '' }))
-  await $.ui.open({ id: DIALOG, title: d.kind === 'new' ? '새 env 파일' : '키 추가', focus: true, closeOnEscape: true, holdToasts: true, rows: d.kind === 'new' ? 12 : 7 })
+  await $.ui.focus({ requestId: PANE, key: d.kind === 'new' ? 'dlg-name' : 'dlg-key' }).catch(() => undefined)
 }
 
 async function closeDialog($: $, message: string): Promise<void> {
   await update($, dialogAtom, () => null)
-  await $.ui.close({ id: DIALOG })
   await closeMode($, message)
 }
 

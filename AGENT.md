@@ -24,5 +24,5 @@ Claude Code mod `env-manager`, 배포 경로: GitHub `obov/claude-mod-env-manage
 
 - `$.state` atom 값의 형태가 바뀌면 `shape` 문자열을 올림 (`ui-6` → `ui-7`), 계약은 `types/index.d.ts`
 - 사용자 UI 문구는 한국어, 짧은 명사형
-- 안내창(dialog)은 별도 pane `env-manager-dialog` (`focus`, `closeOnEscape`, `holdToasts`)
+- 안내창(dialog)은 별도 pane이 아닌 env 패널 안 overlay 카드 (`position="absolute"` Box, `dialogAtom`). 열려 있는 동안 트리 키 입력 무시
 - 테스트에서 `$.ui.open` / `$.ui.close`는 `{ value: ... }`로 stub
