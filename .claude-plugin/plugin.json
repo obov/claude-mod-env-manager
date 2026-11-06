@@ -1,6 +1,6 @@
 {
   "name": "env-manager",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Tracks local .env files: masked tree pane, gitignore checks, add/copy/edit values, and secrets typed into prompts moved into an env file",
   "author": {
     "name": "obov"

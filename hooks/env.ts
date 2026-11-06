@@ -241,11 +241,21 @@ function gitleaksMatches(text: string, isGeneric: boolean): Found[] {
   return out
 }
 
+// Words that mark a hand-made fake value when they stand as their own segment
+// (sk-test-..., fake_token, dummy-key). Stripe's sk_test_/rk_test_ keys are
+// real secrets, so they keep being reported.
+const PLACEHOLDER_WORDS = new Set(['test', 'testing', 'fake', 'dummy', 'mock', 'example', 'sample', 'placeholder'])
+
+export function isPlaceholder(value: string): boolean {
+  if (/^[sr]k_test_/.test(value)) return false
+  return value.split(/[^A-Za-z0-9]+/).some(s => PLACEHOLDER_WORDS.has(s.toLowerCase()))
+}
+
 export function findSecrets(text: string): Found[] {
   const found: Found[] = []
   const overlaps = (s: number, e: number) => found.some(f => s < f.end && e > f.start)
   const add = (f: Found) => {
-    if (!overlaps(f.start, f.end)) found.push(f)
+    if (!isPlaceholder(f.value) && !overlaps(f.start, f.end)) found.push(f)
   }
 
   // 1. NAME=value: the user's own name wins
@@ -283,7 +293,7 @@ export function findSecrets(text: string): Found[] {
 export function findSecretsInCode(text: string): Found[] {
   const found: Found[] = []
   const add = (f: Found) => {
-    if (!found.some(g => f.start < g.end && f.end > g.start)) found.push(f)
+    if (!isPlaceholder(f.value) && !found.some(g => f.start < g.end && f.end > g.start)) found.push(f)
   }
   for (const f of gitleaksMatches(text, false)) add(f)
   for (const d of DETECTORS) {

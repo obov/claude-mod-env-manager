@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { findSecrets, ruleCount } from '../hooks/env'
+import { findSecrets, findSecretsInCode, ruleCount } from '../hooks/env'
 
 const caught = (token: string) => findSecrets(`x ${token} y`).length === 1
 
@@ -29,4 +29,15 @@ test('gitleaks provider rules name the key after the provider', async () => {
   expect(keyOf('const apiKey = process.env.API_KEY')).toBe('')
   expect(keyOf('password = "changeme"')).toBe('')
   expect(keyOf('AKI' + 'AIOSFODNN7EXAMPLE')).toBe('')
+})
+
+test('hand-made fake values (sk-test-..., fake_token) are not secrets', async () => {
+  const keyOf = (text: string) => findSecrets(text).map(f => f.key).join(',')
+  const codeOf = (text: string) => findSecretsInCode(text).map(f => f.key).join(',')
+  expect(codeOf("const OPENAI_SECRET = 'sk-" + "test-visible-key-1234567890';")).toBe('')
+  expect(codeOf("const OPENAI_KEY = 'sk-" + "test-KEY0123456789abcdef';")).toBe('')
+  expect(keyOf('OPENAI_API_KEY=sk-' + 'test-KEY0123456789abcdef')).toBe('')
+  expect(keyOf('API_TOKEN=dummy_' + 'Xk29dLq0pZ81aa')).toBe('')
+  expect(keyOf('sk-' + 'proj-aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5bC')).not.toBe('') // real shape still caught
+  expect(keyOf('sk_' + 'test_51HaB3dE5fG7hJ9kL1mN3pQ5rS')).not.toBe('') // Stripe test keys are real secrets
 })
