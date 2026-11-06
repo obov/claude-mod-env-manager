@@ -5,7 +5,7 @@ import type {
   CodeFinding, CodeScan, EnvDialog, EnvFile, EnvMode, EnvRow, EnvRowsProps, EnvScan, EnvUi, GitleaksRecord, GitleaksState, HistoryFinding,
 } from '../types'
 import {
-  SKIP_DIRS, baseOf, dirOf, findSecrets, findSecretsInCode, isScannableCode, isTemplateName, isValidKey, lineOf, mask,
+  SKIP_DIRS, baseOf, dirOf, findSecrets, findSecretsInCode, isPlaceholder, isScannableCode, isTemplateName, isValidKey, lineOf, mask,
   matchesAny, parseEnv, parsePatterns, removeKey, renameKey, setKey, uniqueKey,
 } from './env'
 import type { Found } from './env'
@@ -1061,13 +1061,14 @@ async function prepareGitleaks($: $, scan: EnvScan): Promise<void> {
   if (head && head !== saved?.head) void runGitleaks($, scan).catch(() => undefined)
 }
 
-type GitleaksJson = { RuleID?: string; File?: string; StartLine?: number; Commit?: string; Date?: string }
+type GitleaksJson = { RuleID?: string; File?: string; StartLine?: number; Commit?: string; Date?: string; Secret?: string }
 
+/** gitleaks runs unredacted so fake values (sk-test-...) can be dropped here; the secret itself is never kept. */
 export function parseGitleaksReport(stdout: string): HistoryFinding[] {
   const start = stdout.indexOf('[')
   if (start < 0) return []
   const data = JSON.parse(stdout.slice(start)) as GitleaksJson[]
-  return data.map(f => ({ rule: f.RuleID ?? '', file: f.File ?? '', line: f.StartLine ?? 0, commit: f.Commit ?? '', date: f.Date ?? '' }))
+  return data.filter(f => !isPlaceholder(f.Secret ?? '')).map(f => ({ rule: f.RuleID ?? '', file: f.File ?? '', line: f.StartLine ?? 0, commit: f.Commit ?? '', date: f.Date ?? '' }))
 }
 
 async function runGitleaks($: $, scan: EnvScan): Promise<GitleaksRecord | null> {
@@ -1079,7 +1080,7 @@ async function runGitleaks($: $, scan: EnvScan): Promise<GitleaksRecord | null> 
   let record: GitleaksRecord
   try {
     const r = await $.process.run(
-      ['gitleaks', 'git', '--no-banner', '--redact', '--report-format', 'json', '--report-path', '-', '--exit-code', '0', '--log-level', 'error', top],
+      ['gitleaks', 'git', '--no-banner', '--report-format', 'json', '--report-path', '-', '--exit-code', '0', '--log-level', 'error', top],
       { cwd: top, timeoutMs: 600_000 },
     )
     const findings = parseGitleaksReport(r.stdout)

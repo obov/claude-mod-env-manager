@@ -95,7 +95,10 @@ const PANE = {
 
 test('the settings page flips an option through /config and runs gitleaks, keeping the result', async ($, on) => {
   const files: Record<string, string> = {}
-  const report = JSON.stringify([{ RuleID: 'aws-access-token', File: 'old/config.js', StartLine: 3, Commit: 'deadbeefcafe', Date: '2024-01-01' }])
+  const report = JSON.stringify([
+    { RuleID: 'aws-access-token', File: 'old/config.js', StartLine: 3, Commit: 'deadbeefcafe', Date: '2024-01-01', Secret: 'AKI' + 'AZ7Q3LMN4PRST6UVW' },
+    { RuleID: 'generic-api-key', File: 'test/keys.test.ts', StartLine: 7, Commit: 'deadbeefcafe', Date: '2024-01-01', Secret: 'sk-' + 'test-KEY0123456789abcdef' }, // fake value, dropped
+  ])
   fake(on, files, { lsFiles: [], gitleaks: report })
   const store: Record<string, unknown> = {}
   on('store.get', (_: unknown, e: { key: string }) => ({ value: store[e.key] }))
@@ -123,6 +126,7 @@ test('the settings page flips an option through /config and runs gitleaks, keepi
   for (let i = 0; i < 6; i++) await ui.key({ key: 'down', in: 'rows' }) // … gitleaks, gl-info, gl-last, gl-run
   await ui.key({ key: 'return', in: 'rows' })
   expect(JSON.stringify(store['gitleaks:/proj']).includes('"count":1')).toBe(true)
+  expect(JSON.stringify(store['gitleaks:/proj']).includes('Z7Q3LMN4')).toBe(false) // secret never stored
   expect(JSON.stringify(await ui.drawn({ in: 'rows' })).includes('1건')).toBe(true)
   await ui.unmount()
 })
